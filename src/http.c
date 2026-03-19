@@ -276,8 +276,11 @@ process_wired_device_pass(struct evhttp_request *req, const char *mac)
 	if (!mac) return 0;
 	
     if (br_is_device_wired(mac)) {
-        if (!is_trusted_mac(mac))
+        if (!is_trusted_mac(mac)) {
+            // 临时允许设备访问认证页面，避免死循环
+            fw_set_mac_temporary(mac, 10);
             client_snapshot_add_trusted_mac(mac, 0, "wired");
+        }
         ev_http_resend(req, 0);
         return 1;
     }
