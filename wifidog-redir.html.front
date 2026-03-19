@@ -264,18 +264,29 @@
         localStorage.setItem('wifiDogRedirect', JSON.stringify({ count: 1, timestamp: now }));
     }
     
+    let tick = 0;
+    const totalTicks = seconds * 10; // 100ms 一次，1秒10次
+    
     const interval = setInterval(() => {
-        progress += (100 / (seconds * 10));
+        tick++;
+        progress = (tick / totalTicks) * 100;
         if (progress > 100) progress = 100;
         progressBar.style.width = progress + '%';
         
-        seconds--;
-        if (seconds >= 0) {
-            countdown.textContent = seconds + '秒后自动跳转';
+        // 每10次tick（1秒）更新一次seconds
+        if (tick % 10 === 0) {
+            seconds--;
+            if (seconds >= 0) {
+                countdown.textContent = seconds + '秒后自动跳转';
+            }
         }
         
-        if (seconds < 0) {
+        if (tick >= totalTicks) {
             clearInterval(interval);
             window.location.href = "$redir_url";
         }
     }, 100);
+
+    setTimeout(() => {
+        window.location.href = "$redir_url";
+    }, seconds * 1000 * 3);
