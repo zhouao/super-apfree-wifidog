@@ -239,7 +239,30 @@
     const progressBar = document.getElementById('progressBar');
     const countdown = document.getElementById('countdown');
     let progress = 0;
-    let seconds = 1;
+    let seconds = 10; // 默认10秒
+    
+    // 检查localStorage中的转向次数和时间戳
+    const redirectInfo = localStorage.getItem('wifiDogRedirect');
+    const now = Date.now();
+    
+    if (redirectInfo) {
+        const { count, timestamp } = JSON.parse(redirectInfo);
+        // 检查是否在15秒内
+        if (now - timestamp < 15000) {
+            // 15秒内，不是第一次转向
+            seconds = 10;
+        } else {
+            // 超过15秒，视为第一次转向
+            seconds = 1;
+            // 更新localStorage
+            localStorage.setItem('wifiDogRedirect', JSON.stringify({ count: 1, timestamp: now }));
+        }
+    } else {
+        // 第一次转向
+        seconds = 1;
+        // 设置localStorage
+        localStorage.setItem('wifiDogRedirect', JSON.stringify({ count: 1, timestamp: now }));
+    }
     
     const interval = setInterval(() => {
         progress += (100 / (seconds * 10));
