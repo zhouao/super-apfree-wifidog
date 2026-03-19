@@ -1,0 +1,1068 @@
+# WiFiDogX WebSocket API 文档
+
+## 概述
+
+WiFiDogX 实现了一个 WebSocket 客户端，用于连接到中央管理服务器以进行实时通信和控制。本文档描述了所有支持的 WebSocket 消息类型及其各自的请求/响应格式。
+
+## 连接详情
+
+- **协议**: WebSocket (RFC 6455)
+- **消息格式**: JSON
+- **帧类型**: 文本帧
+- **认证**: 通过 `device_id` 进行基于设备的身份识别
+
+## `req_id` 请求关联
+
+- 服务器发往设备的请求现在支持可选字段 `req_id`
+- 对于会返回响应的请求，设备会在响应 JSON 顶层原样回显 `req_id`
+- `req_id` 可以是 JSON number 或 string
+- 不产生响应的单向消息，如 `auth`，不会回传 `req_id`
+- 如果请求缺少 `type` 或 `type` 不支持，设备会返回 `type: "request_error"`，并在有 `req_id` 时一并带回
+
+**示例请求:**
+```json
+{
+  "req_id": 1001,
+  "type": "get_status"
+}
+```
+
+**示例响应:**
+```json
+{
+  "type": "get_status_response",
+  "req_id": 1001,
+  "data": {
+    "service": "apfree-wifidog"
+  }
+}
+```
+
+## 消息类型
+
+### 1. 连接与心跳
+
+#### 1.1 连接消息 (设备 → 服务器)
+WebSocket 连接建立时自动发送。
+
+**请求:**
+```json
+{
+  "type": "connect",
+  "device_id": "<device_identifier>",
+  "device_info": {
+    "ap_device_id": "<ap_device_id>",
+    "ap_mac_address": "<ap_mac_address>", 
+    "ap_longitude": "<ap_longitude>",
+    "ap_latitude": "<ap_latitude>",
+    "location_id": "<location_id>"
+  },
+  "gateway": [
+    {
+      "gw_id": "<gateway_id>",
+      "gw_channel": "<channel_name>",
+      "gw_address_v4": "<ipv4_address>",
+      "gw_address_v6": "<ipv6_address>",  // 可选
+      "auth_mode": <integer>,
+      "gw_interface": "<interface_name>"
+    }
+  ]
+}
+```
+
+#### 1.2 心跳消息 (设备 → 服务器)
+每60秒发送一次以维持连接并同步网关状态。
+
+**请求:**
+```json
+{
+  "type": "heartbeat",
+  "device_id": "<device_identifier>",
+  "device_info": {
+    "ap_device_id": "<ap_device_id>",
+    "ap_mac_address": "<ap_mac_address>", 
+    "ap_longitude": "<ap_longitude>",
+    "ap_latitude": "<ap_latitude>",
+    "location_id": "<location_id>"
+  },
+  "gateway": [
+    {
+      "gw_id": "<gateway_id>",
+      "gw_channel": "<channel_name>",
+      "gw_address_v4": "<ipv4_address>",
+      "gw_address_v6": "<ipv6_address>",  // 可选
+      "auth_mode": <integer>,
+      "gw_interface": "<interface_name>"
+    }
+  ]
+}
+```
+
+**响应 (服务器 → 设备):**
+```json
+{
+  "type": "heartbeat",
+  "gateway": [
+    {
+      "gw_id": "<gateway_id>",
+      "auth_mode": "<new_auth_mode>"
+    }
+  ]
+}
+```
+
+---
+
+### 2. 客户端认证
+
+#### 2.1 认证请求 (服务器 → 设备)
+服务器发送客户端的认证指令。
+
+**请求:**
+```json
+{
+  "type": "auth",
+  "token": "<auth_token>",
+  "client_ip": "<client_ip_address>",
+  "client_mac": "<client_mac_address>",
+  "client_name": "<client_name>",        // 可选
+  "gw_id": "<gateway_id>",
+  "once_auth": <boolean>
+}
+```
+
+**行为:**
+- 如果 `once_auth` 为 `true`: 设置网关认证模式为0并重新加载防火墙规则
+- 如果 `once_auth` 为 `false`: 将客户端添加到允许列表并设置防火墙规则
+- **不向服务器发送响应**
+
+---
+
+### 3. 客户端剔除
+
+#### 3.1 剔除请求 (服务器 → 设备)
+服务器请求断开特定客户端的连接。
+
+**请求:**
+```json
+{
+  "type": "kickoff",
+  "client_ip": "<client_ip_address>",
+  "client_mac": "<client_mac_address>",
+  "device_id": "<device_identifier>",
+  "gw_id": "<gateway_id>"
+}
+```
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "kickoff_response",
+  "status": "success",
+  "client_ip": "<client_ip_address>",
+  "client_mac": "<client_mac_address>",
+  "message": "客户端已成功剔除"
+}
+```
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "kickoff_error",
+  "error": "请求中缺少必填字段"
+}
+```
+
+```json
+{
+  "type": "kickoff_error",
+  "error": "未找到客户端",
+  "client_ip": "<client_ip_address>",
+  "client_mac": "<client_mac_address>"
+}
+```
+
+```json
+{
+  "type": "kickoff_error",
+  "error": "设备 ID 不匹配",
+  "expected_device_id": "<expected_id>",
+  "actual_device_id": "<actual_id>"
+}
+```
+
+```json
+{
+  "type": "kickoff_error",
+  "error": "网关 ID 不匹配",
+  "client_mac": "<client_mac_address>",
+  "expected_gw_id": "<expected_gateway_id>",
+  "actual_gw_id": "<actual_gateway_id>"
+}
+```
+
+---
+
+### 4. 临时访问
+
+#### 4.1 临时通行请求 (服务器 → 设备)
+服务器授予客户端 MAC 地址临时网络访问权限。
+
+**请求:**
+```json
+{
+  "type": "tmp_pass",
+  "client_mac": "<client_mac_address>",
+  "timeout": <seconds>                   // 可选, 默认: 300 (5 分钟)
+}
+```
+
+**行为:**
+- 为指定的 MAC 地址设置临时防火墙访问权限
+- 访问权限在超时后过期
+- **不向服务器发送响应**
+
+---
+
+### 5. 固件信息
+
+#### 5.1 获取固件信息请求 (服务器 → 设备)
+服务器请求设备当前的固件信息。
+
+**请求:**
+```json
+{
+  "type": "get_firmware_info"
+}
+```
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "firmware_info_response",
+  "data": {
+    "DISTRIB_ID": "ChaWrt",
+    "DISTRIB_RELEASE": "24.10-SNAPSHOT",
+    "DISTRIB_REVISION": "r28790-abc123",
+    "DISTRIB_CODENAME": "snapshot",
+    "DISTRIB_TARGET": "ramips/mt7621",
+    "DISTRIB_DESCRIPTION": "ChaWrt 24.10-SNAPSHOT r28790-abc123",
+    // ... /etc/openwrt_release 中的其他键值对
+  }
+}
+```
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "firmware_info_error",
+  "error": "执行命令失败"
+}
+```
+
+---
+
+### 6. 固件升级
+
+#### 6.1 固件升级请求 (服务器 → 设备)
+服务器在设备上启动固件升级。
+
+**请求:**
+```json
+{
+  "type": "firmware_upgrade",
+  "url": "<firmware_image_url>",         // 必填
+  "force": <boolean>                     // 可选, 默认: false
+}
+```
+
+**参数:**
+- `url`: 固件镜像的直接下载 URL
+- `force`: 如果为 `true`, 使用 `sysupgrade -F` (强制升级，不进行检查)
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "firmware_upgrade_response",
+  "status": "success",
+  "message": "固件升级已成功启动"
+}
+```
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "firmware_upgrade_error",
+  "error": "缺少或无效的 'url' 字段"
+}
+```
+
+```json
+{
+  "type": "firmware_upgrade_error",
+  "error": "执行 sysupgrade 命令失败"
+}
+```
+
+**重要说明:**
+- 成功响应在系统重启**之前**发送
+- 成功执行命令后，设备可能会重启并断开连接
+- 服务器应在成功固件升级后预期连接丢失
+
+---
+
+### 7. 设备重启
+
+#### 7.1 设备重启请求 (服务器 → 设备)
+服务器请求立即重启设备，用于维护或配置更改。
+
+**请求:**
+```json
+{
+  "type": "reboot_device"
+}
+```
+
+**成功行为:**
+- 设备立即开始重启过程
+- 不向服务器发送响应，因为设备会关机
+- WebSocket 连接被系统关机终止
+- 所有运行的进程和网络连接都将被终止
+
+**错误响应 (设备 → 服务器):**
+仅当重启命令执行失败时发送:
+```json
+{
+  "type": "reboot_device_error", 
+  "error": "执行重启命令失败"
+}
+```
+
+**重要说明:**
+- 这是需要系统 root 权限的特权操作
+- 所有未保存的数据和活动连接都将丢失
+- 设备重启后遵循正常的启动序列
+- 谨慎使用，因为它会中断所有正在进行的操作
+- 应仅由经过身份验证的管理连接使用
+
+**安全注意事项:**
+- 在处理重启请求前实施适当的授权检查
+- 考虑实施速率限制以防止滥用
+- 记录所有重启请求以供审计
+
+---
+
+### 8. 更新设备信息
+
+#### 8.1 更新设备信息请求 (服务器 → 设备)
+服务器请求更新设备的信息。
+
+**请求:**
+```json
+{
+  "type": "update_device_info",
+  "device_info": {
+    "ap_device_id": "<new_ap_device_id>",      // 可选
+    "ap_mac_address": "<new_ap_mac_address>", // 可选
+    "ap_longitude": "<new_ap_longitude>",     // 可选
+    "ap_latitude": "<new_ap_latitude>",       // 可选
+    "location_id": "<new_location_id>"        // 可选
+  }
+}
+```
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "update_device_info_response",
+  "status": "success",
+  "message": "设备信息更新成功"
+}
+```
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "update_device_info_error",
+  "error": "缺少 'device_info' 字段"
+}
+```
+
+---
+
+### 9. Wi-Fi 信息
+
+#### 9.1 获取 Wi-Fi 信息请求 (服务器 → 设备)
+服务器请求设备的完整 Wi-Fi 配置信息。设备会返回所有radio设备的详细配置、接口信息和可用网络接口列表。
+
+**请求:**
+```json
+{
+  "type": "get_wifi_info"
+}
+```
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "get_wifi_info_response",
+  "data": {
+    "radio0": {
+      "type": "mac80211",
+      "path": "platform/soc/18000000.wifi",
+      "band": "2g",
+      "channel": 8,
+      "htmode": "HT20",
+      "cell_density": 0,
+      "interfaces": [
+        {
+          "interface_name": "wifinet3",
+          "mode": "ap",
+          "ssid": "MyWiFi-2.4G",
+          "key": "password123",
+          "encryption": "psk2",
+          "network": "lan2",
+          "disabled": false
+        }
+      ]
+    },
+    "radio1": {
+      "type": "mac80211",
+      "path": "platform/soc/18000000.wifi+1",
+      "band": "5g",
+      "channel": 36,
+      "htmode": "HE80",
+      "cell_density": 0,
+      "interfaces": [
+        {
+          "interface_name": "default_radio1",
+          "mode": "mesh",
+          "mesh_id": "my-mesh-network",
+          "key": "meshkey123",
+          "encryption": "sae",
+          "network": "lan3",
+          "disabled": false
+        },
+        {
+          "interface_name": "wifinet2",
+          "mode": "ap",
+          "ssid": "MyWiFi-5G",
+          "key": "password123",
+          "encryption": "psk2",
+          "network": "lan",
+          "disabled": false
+        }
+      ]
+    },
+    "available_networks": ["lan", "lan2", "lan3"]
+  }
+}
+```
+
+**响应字段:**
+
+**Radio设备信息:**
+- `type`: 设备类型，通常为"mac80211"
+- `path`: 设备路径
+- `band`: 频段，"2g"或"5g"
+- `channel`: 信道号
+- `htmode`: HT模式，如"HT20"、"HE80"、"VHT80"等
+- `cell_density`: 小区密度，0-3
+
+**接口信息:**
+- `interface_name`: 接口名称
+- `mode`: 接口模式，"ap"（接入点）、"mesh"（网状网络）、"sta"（客户端）
+- `ssid`: WiFi网络名称（AP模式，仅在非空时包含）
+- `key`: 密码/密钥（仅在非空时包含）
+- `encryption`: 加密方式，"psk2"、"sae"、"none"等
+- `network`: 绑定的网络接口
+- `mesh_id`: Mesh网络ID（Mesh模式，仅在非空时包含）
+- `disabled`: 是否禁用（布尔值）
+
+**可用网络接口:**
+- `available_networks`: 字符串数组，包含协议类型为`static`的网络接口名称，用于WiFi接口绑定选择，排除系统接口（loopback、globals）
+
+**实现细节:**
+- 通过`uci show wireless`命令获取完整的无线配置
+- 解析UCI配置，区分radio设备和接口配置
+- 只有非空字段才会包含在响应中（ssid、key、mesh_id）
+- 自动发现每个接口所属的radio设备
+- 通过`uci show network | grep '\.proto=.static.'`获取可用网络接口
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "get_wifi_info_error",
+  "error": "Failed to execute command"
+}
+```
+
+#### 9.2 设置 Wi-Fi 信息请求 (服务器 → 设备)
+服务器请求更新设备的完整 Wi-Fi 配置信息，包括radio设备参数和接口配置。配置更改后会自动重载WiFi服务使配置生效。
+
+**请求:**
+```json
+{
+  "type": "set_wifi_info",
+  "data": {
+    "radio0": {
+      "channel": "8",
+      "htmode": "HT20",
+      "cell_density": 0,
+      "interfaces": [
+        {
+          "interface_name": "wifinet3",
+          "mode": "ap",
+          "ssid": "NewWiFi-2.4G",
+          "key": "newpassword123",
+          "encryption": "psk2",
+          "network": "lan2",
+          "disabled": false
+        }
+      ]
+    },
+    "radio1": {
+      "channel": "36",
+      "htmode": "HE80",
+      "cell_density": 0,
+      "interfaces": [
+        {
+          "interface_name": "default_radio1",
+          "mode": "mesh",
+          "mesh_id": "my-mesh-network",
+          "key": "meshkey123",
+          "encryption": "sae",
+          "network": "lan3",
+          "disabled": false
+        },
+        {
+          "interface_name": "wifinet2",
+          "mode": "ap",
+          "ssid": "NewWiFi-5G",
+          "key": "newpassword123",
+          "encryption": "psk2",
+          "network": "lan",
+          "disabled": false
+        }
+      ]
+    }
+  }
+}
+```
+
+**请求字段:**
+
+**Radio设备配置:**
+- `channel`: 信道号
+- `htmode`: HT模式（HT20, HT40, VHT80, HE80等）
+- `cell_density`: 小区密度（0-3）
+
+**接口配置:**
+- `interface_name`: 接口名称（必需，必须与现有UCI配置匹配）
+- `mode`: 接口模式（"ap", "mesh", "sta"）
+- `ssid`: WiFi网络名称（AP模式）
+- `key`: 密码/密钥
+- `encryption`: 加密方式（"psk2", "sae", "none"等）
+- `network`: 绑定的网络接口（必须是proto=static的接口）
+- `mesh_id`: Mesh网络ID（Mesh模式）
+- `disabled`: 是否禁用（true/false）
+
+**配置模式:**
+
+1. **AP模式**: 创建WiFi热点
+   - 必需字段: `mode`="ap", `ssid`, `key`, `encryption`, `network`
+
+2. **Mesh模式**: 创建网状网络
+   - 必需字段: `mode`="mesh", `mesh_id`, `key`, `encryption`, `network`
+   - 推荐使用`encryption`="sae"（WPA3）
+
+**支持的加密方式:**
+- `none`: 无加密
+- `psk`: WPA-PSK
+- `psk2`: WPA2-PSK
+- `sae`: WPA3-SAE（推荐用于Mesh）
+- `psk-mixed`: WPA/WPA2混合
+
+**处理逻辑:**
+1. 验证请求数据格式和必需字段
+2. 配置radio设备参数（channel、htmode、cell_density）
+3. 配置每个接口的属性（mode、ssid、key、encryption、network、mesh_id、disabled）
+4. 设置接口与radio设备的关联关系
+5. 提交UCI配置更改
+6. 重载WiFi服务使配置生效
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "set_wifi_info_response",
+  "data": {
+    "status": "success",
+    "message": "Wi-Fi configuration updated successfully"
+  }
+}
+```
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "set_wifi_info_error",
+  "error": "Failed to set SSID for interface wifinet2"
+}
+```
+
+**注意事项:**
+1. 配置更改后需要等待约10-30秒WiFi服务重启
+2. 接口名称必须与现有UCI配置中的section名称匹配
+3. 信道选择需要符合当前地区的法规要求
+4. Mesh模式需要所有参与设备使用相同的mesh_id和加密配置
+5. WiFi接口只能绑定到available_networks中列出的静态网络接口
+6. 只有proto=static的网络接口才可用于WiFi绑定
+
+---
+
+### 10. 系统信息
+
+#### 10.1 获取系统信息请求 (服务器 → 设备)
+服务器请求获取设备的当前系统信息。这提供了全面的监控数据，包括系统资源使用情况、进程状态和硬件指标。
+
+**请求:**
+```json
+{
+  "type": "get_sys_info"
+}
+```
+
+**成功响应 (设备 → 服务器):**
+```json
+{
+  "type": "get_sys_info_response",
+  "data": {
+    "sys_uptime": 12345,
+    "sys_memfree": 512000,
+    "sys_load": 0.25,
+    "nf_conntrack_count": 100,
+    "cpu_usage": 15.5,
+    "wifidog_uptime": 3600,
+    "cpu_temp": 45
+  }
+}
+```
+
+**响应字段:**
+- `sys_uptime`: 系统自上次启动以来的运行时间（秒）
+- `sys_memfree`: 可用空闲内存（KB）
+- `sys_load`: 系统负载平均值（1分钟平均值）
+- `nf_conntrack_count`: 活动网络连接跟踪条目数量
+- `cpu_usage`: 当前CPU使用率百分比（0.0-100.0）
+- `wifidog_uptime`: WiFidog进程自启动以来的运行时间（秒）
+- `cpu_temp`: CPU温度（摄氏度）
+
+**数据收集详情:**
+- **系统运行时间**: 从 `/proc/uptime` 获取
+- **内存信息**: 从 `/proc/meminfo` 获取（MemFree 字段）
+- **负载平均值**: 从 `/proc/loadavg` 获取（1分钟平均值）
+- **连接跟踪**: 从 `/proc/sys/net/netfilter/nf_conntrack_count` 获取
+- **CPU使用率**: 通过 `/proc/stat` 采样计算
+- **进程运行时间**: 根据WiFidog进程启动时间计算
+- **CPU温度**: 从 `/sys/class/thermal/thermal_zone*/temp` 或 `/sys/class/hwmon/hwmon*/temp1_input` 的热传感器获取
+
+**错误响应 (设备 → 服务器):**
+```json
+{
+  "type": "get_sys_info_error",
+  "error": "获取系统信息失败"
+}
+```
+
+**使用场景:**
+- **系统监控**: 实时监控设备健康状况和性能
+- **资源管理**: 跟踪内存和CPU使用情况以进行容量规划
+- **性能分析**: 监控系统负载和连接数量
+- **温度监控**: 硬件健康监控和热管理
+- **进程监控**: 跟踪WiFidog进程状态和运行时间
+
+**实现注意事项:**
+- 所有系统信息都在收到请求时实时收集
+- 温度读取会尝试多个热传感器路径以确保兼容性
+- CPU使用率计算涉及定期对 `/proc/stat` 进行采样
+- 错误处理确保即使某些指标不可用也能进行部分数据收集
+- 响应包含所有可用指标，即使某些收集方法失败
+
+---
+
+### 11. 域名管理
+
+域名管理功能允许通过 WebSocket 连接动态管理受信任的域名列表，包括精确匹配的域名和通配符域名。这些域名的网络流量可以在不需要用户认证的情况下通过防火墙。
+
+#### 11.1 同步受信任域名列表 (服务器 → 设备)
+
+完全替换当前的受信任域名列表。
+
+**请求:**
+```json
+{
+  "type": "sync_trusted_domain",
+  "domains": [
+    "example.com",
+    "trusted-site.org", 
+    "api.service.com"
+  ]
+}
+```
+
+**响应:**
+```json
+{
+  "type": "sync_trusted_domain_response",
+  "status": "success",
+  "message": "受信任域名同步成功"
+}
+```
+
+**功能说明:**
+- 清除所有现有的受信任域名
+- 添加请求中提供的所有域名
+- 更新 UCI 配置以保持持久化
+- 更改立即生效
+
+#### 11.2 获取受信任域名列表 (服务器 → 设备)
+
+获取当前配置的所有受信任域名。
+
+**请求:**
+```json
+{
+  "type": "get_trusted_domains"
+}
+```
+
+**响应:**
+```json
+{
+  "type": "get_trusted_domains_response",
+  "domains": [
+    "example.com",
+    "api.service.com",
+    "cdn.provider.net"
+  ]
+}
+```
+
+**功能说明:**
+- 返回当前所有精确匹配的域名
+- 如果没有配置域名，返回空数组
+- 响应中的域名顺序可能与配置顺序不同
+
+#### 11.3 同步受信任通配符域名列表 (服务器 → 设备)
+
+完全替换当前的受信任通配符域名列表。
+
+**请求:**
+```json
+{
+  "type": "sync_trusted_wildcard_domains", 
+  "domains": [
+    "*.googleapis.com",
+    "*.cloudflare.com",
+    "*.github.io",
+    "*.example.org"
+  ]
+}
+```
+
+**响应:**
+```json
+{
+  "type": "sync_trusted_wildcard_domains_response",
+  "status": "success", 
+  "message": "受信任通配符域名同步成功"
+}
+```
+
+**功能说明:**
+- 清除所有现有的受信任通配符域名
+- 添加请求中提供的所有通配符域名模式
+- 通配符通常使用 `*.` 前缀匹配子域名
+- 更新 UCI 配置以保持持久化
+- 更改立即生效
+
+**通配符域名示例:**
+- `*.example.com` - 匹配 api.example.com, cdn.example.com 等
+- `*.github.io` - 匹配 username.github.io, project.github.io 等  
+- `*.googleapis.com` - 匹配 maps.googleapis.com, fonts.googleapis.com 等
+
+#### 11.4 获取受信任通配符域名列表 (服务器 → 设备)
+
+获取当前配置的所有受信任通配符域名。
+
+**请求:**
+```json
+{
+  "type": "get_trusted_wildcard_domains"
+}
+```
+
+**响应:**
+```json
+{
+  "type": "get_trusted_wildcard_domains_response",
+  "domains": [
+    "*.googleapis.com",
+    "*.cloudflare.com",
+    "*.github.io"
+  ]
+}
+```
+
+**功能说明:**
+- 返回当前所有通配符域名模式
+- 如果没有配置通配符域名，返回空数组
+- 响应中的域名顺序可能与配置顺序不同
+
+#### 域名管理技术实现细节
+
+**数据持久化:**
+- 所有域名配置都会同步更新到 UCI 配置系统
+- 配置在系统重启后自动恢复
+- 普通域名存储在 `wifidogx.common.trusted_domains` 
+- 通配符域名存储在 `wifidogx.common.trusted_wildcard_domains`
+
+**内存管理:**
+- 使用链表结构管理域名数据
+- 同步操作会先清除现有数据再添加新数据
+- 自动处理内存分配和释放
+
+**错误处理:**
+- JSON 解析错误会记录到调试日志
+- 无效的请求格式会被忽略
+- UCI 配置更新失败会记录错误但不影响内存中的配置
+
+**性能考虑:**
+- 域名匹配在网络流量处理中频繁使用
+- 建议将最常用的域名放在列表前面
+- 通配符匹配比精确匹配消耗更多资源
+
+**使用建议:**
+1. **批量更新**: 使用同步接口一次性更新所有域名，避免频繁的单独更新
+2. **通配符使用**: 对于有很多子域名的服务，使用通配符域名更高效
+3. **监控和验证**: 使用获取接口来验证更新后的配置
+4. **备份和恢复**: 重要的域名配置应定期备份到外部系统
+
+**兼容性:**
+- 支持 IPv4 和 IPv6 网络
+- 兼容标准的域名解析机制
+- 通配符模式依赖于底层的域名解析实现
+- 建议在测试环境中验证通配符匹配行为
+
+---
+
+### 12. 客户端信息
+
+客户端信息功能允许通过 WebSocket 连接检索已认证客户端的详细信息。这使得能够实时监控客户端状态、流量统计和连接详情。
+
+#### 12.1 通过 MAC 地址获取客户端信息 (服务器 → 设备)
+
+通过 MAC 地址检索特定已认证客户端的详细信息。
+
+**请求:**
+```json
+{
+  "type": "get_client_info",
+  "mac": "aa:bb:cc:dd:ee:ff"
+}
+```
+
+**成功响应:**
+```json
+{
+  "type": "get_client_info_response",
+  "data": {
+    "id": 12345,
+    "ip": "192.168.1.100",
+    "ip6": "fe80::1234:5678:9abc:def0",
+    "mac": "aa:bb:cc:dd:ee:ff",
+    "token": "auth_token_string",
+    "fw_connection_state": 1,
+    "name": "设备名称",
+    "is_online": 1,
+    "wired": 0,
+    "first_login": 1640995200,
+    "counters": {
+      "incoming_bytes": 1048576,
+      "incoming_packets": 1024,
+      "outgoing_bytes": 2097152,
+      "outgoing_packets": 2048,
+      "incoming_rate": 1000,
+      "outgoing_rate": 2000,
+      "last_updated": 1640995800
+    },
+    "counters6": {
+      "incoming_bytes": 524288,
+      "incoming_packets": 512,
+      "outgoing_bytes": 1048576,
+      "outgoing_packets": 1024,
+      "incoming_rate": 500,
+      "outgoing_rate": 1000,
+      "last_updated": 1640995800
+    }
+  }
+}
+```
+
+**错误响应:**
+```json
+{
+  "type": "get_client_info_error",
+  "error": "Client not found"
+}
+```
+
+**响应字段:**
+
+**基本客户端信息:**
+- `id`: 唯一客户端标识符 (64位整数)
+- `ip`: 客户端的 IPv4 地址
+- `ip6`: 客户端的 IPv6 地址 (可选)
+- `mac`: 客户端的 MAC 地址
+- `token`: 分配给客户端的认证令牌
+- `fw_connection_state`: 防火墙连接状态 (整数)
+- `name`: 设备名称 (可选，如果可用)
+- `is_online`: 在线状态 (1 = 在线, 0 = 离线)
+- `wired`: 连接类型 (0 = 无线, 1 = 有线)
+- `first_login`: 首次登录的 Unix 时间戳
+
+**IPv4 流量计数器 (`counters`):**
+- `incoming_bytes`: 总接收数据字节数
+- `incoming_packets`: 总接收数据包数
+- `outgoing_bytes`: 总发送数据字节数
+- `outgoing_packets`: 总发送数据包数
+- `incoming_rate`: 当前接收数据速率 (字节/秒)
+- `outgoing_rate`: 当前发送数据速率 (字节/秒)
+- `last_updated`: 计数器最后更新的 Unix 时间戳
+
+**IPv6 流量计数器 (`counters6`):**
+- 与 IPv4 计数器结构相同，但用于 IPv6 流量
+- 为 IPv6 连接提供单独的统计信息
+- 用于双栈网络监控
+
+**错误条件:**
+- **缺少 MAC 字段**: 请求不包含必需的 'mac' 字段
+- **无效 MAC 地址**: MAC 地址为空或格式错误
+- **客户端未找到**: 未找到具有指定 MAC 地址的已认证客户端
+
+**使用场景:**
+- **客户端监控**: 特定客户端状态和流量的实时监控
+- **故障排除**: 用于网络问题诊断的详细客户端信息
+- **带宽分析**: 单个客户端的流量统计
+- **安全审计**: 认证状态和连接详情验证
+- **网络管理**: 客户端生命周期和使用模式分析
+
+**实现注意事项:**
+- 客户端信息从活动客户端列表中实时检索
+- 使用客户端列表互斥锁保护的线程安全访问
+- 在可用时提供 IPv4 和 IPv6 统计信息
+- 流量计数器在客户端会话期间持续更新
+- 客户端必须当前已认证才能出现在结果中
+
+**安全考虑:**
+- 搜索中仅包含已认证的客户端
+- MAC 地址验证防止格式错误的请求
+- 客户端令牌信息应安全处理
+- 对客户端信息的访问应得到适当授权
+
+---
+
+## 错误处理
+
+### 常规错误场景
+1. **JSON 解析错误**: 无效的 JSON 格式将被记录，但不发送响应
+2. **缺少消息类型**: 缺少 `type` 字段将被记录，但不发送响应
+3. **未知消息类型**: 未知的消息类型将被记录，但不发送响应
+
+### 验证错误
+- 缺少必填字段会导致特定的错误响应
+- 无效的字段类型或值会导致特定的错误响应
+- 认证/授权失败包括详细的错误信息
+
+---
+
+## 实现说明
+
+### 对于服务器开发人员
+
+1. **连接管理**:
+   - 设备在 WebSocket 升级后立即发送 `connect` 消息
+   - 心跳消息每60秒发送一次
+   - 服务器应通过网关配置更新来响应心跳
+
+2. **消息顺序**:
+   - 不保证消息顺序
+   - 每个请求-响应对都是独立的
+   - 服务器应处理乱序或重复的消息
+
+3. **响应处理**:
+   - 某些命令 (`auth`, `tmp_pass`) 不发送响应
+   - 错误响应始终包含描述性的错误消息
+   - 成功响应包含相关的上下文数据
+
+4. **连接恢复**:
+   - 设备在连接失败时自动重新连接
+   - 重新连接间隔: 错误为2秒，EOF为5秒
+   - 最多重试5次后放弃
+
+5. **固件升级**:
+   - 响应在系统重启前发送
+   - 服务器应监控连接状态以检测成功升级
+   - 设备将在成功重启后使用新固件重新连接
+
+### 安全考虑
+
+1. **认证**: 设备识别基于 `device_id`
+2. **验证**: 所有客户端操作都会验证设备和网关 ID
+3. **访问控制**: 临时访问授权有时间限制
+4. **命令验证**: 固件升级命令在执行前会进行验证
+
+---
+
+## 示例工作流程
+
+### 客户端认证流程
+1. 设备从服务器接收 `auth` 请求
+2. 设备验证网关和客户端信息
+3. 设备将客户端添加到防火墙允许列表
+4. 不向服务器发送响应
+
+### 客户端剔除流程
+1. 服务器发送包含客户端详细信息的 `kickoff` 请求
+2. 设备验证请求参数
+3. 设备从防火墙和客户端列表中移除客户端
+4. 设备向服务器发送成功或错误响应
+
+### 固件升级流程
+1. 服务器发送包含固件 URL 的 `firmware_upgrade` 请求
+2. 设备验证 URL 参数
+3. 设备执行 `sysupgrade` 命令
+4. 设备发送成功响应
+5. 设备重启 (连接丢失)
+6. 设备在成功升级后重新连接
+
+---
+
+## 测试与开发
+
+### WebSocket 客户端测试
+使用 `wscat` 或浏览器 WebSocket API 等工具进行测试:
+
+```bash
+# 连接到设备 WebSocket (如果设备充当服务器)
+wscat -c ws://device-ip:port/path
+
+# 发送测试消息
+{"type": "get_firmware_info"}
+```
+
+### 消息验证
+确保所有 JSON 消息符合文档化的模式并包含必填字段。
+
+### 错误模拟
+通过发送格式错误的请求或无效参数来测试错误场景，以验证正确的错误处理和响应生成。

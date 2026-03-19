@@ -1,0 +1,157 @@
+#!/usr/bin/lua
+
+-- Required modules
+require "ubus"
+require "luci.util"
+local json = require "luci.jsonc"
+local nixio = require "nixio"
+local http = require("luci.httpclient")
+
+-- ubus show network interface info
+local function get_network_info(conn)
+    local status = conn:call("network.interface", "dump", {})
+    if not status then
+        error("Failed to get network interface info")
+    end
+    local html = "<h1>Network Interface Info</h1>"
+    
+    for _, v in ipairs(status.interface) do
+        html = html .. "<h2>Interface: " .. v.interface .. "</h2>"
+        html = html .. "<p>Status: " .. (v.up and "UP" or "DOWN") .. "</p>"
+        html = html .. "<p>Device: " .. (v.device or "N/A") .. "</p>"
+        html = html .. "<p>Protocol: " .. v.proto .. "</p>"
+        html = html .. "<p>Available: " .. (v.available and "Yes" or "No") .. "</p>"
+        if v.uptime then
+            html = html .. "<p>Uptime: " .. v.uptime .. " seconds</p>"
+        end
+
+        -- IPv4 Addresses
+        if v["ipv4-address"] and #v["ipv4-address"] > 0 then
+            html = html .. "<p>IPv4 Address: " .. v["ipv4-address"][1].address .. "/" .. v["ipv4-address"][1].mask .. "</p>"
+        end
+
+        -- Routes
+        if v.route and #v.route > 0 then
+            html = html .. "<p>Default Gateway: " .. v.route[1].nexthop .. "</p>"
+        end
+
+        -- DNS Servers
+        if v["dns-server"] and #v["dns-server"] > 0 then
+            html = html .. "<p>DNS Server: " .. v["dns-server"][1] .. "</p>"
+        end
+
+        html = html .. "<hr>"
+    end
+
+    return html
+end
+
+local function is_internet_connected()
+    -- Execute curl command
+    local cmd = 'curl -s -m 5 -L -w "%{http_code}" "http://api64.ipify.org?format=json"'
+    local handle = io.popen(cmd)
+    local result = handle:read("*a")
+    handle:close()
+
+    -- Extract HTTP code (last 3 characters) and response body
+    local body = result:sub(1, -4)  -- Remove last 3 chars (HTTP code)
+    local code = result:sub(-3)     -- Get last 3 chars (HTTP code)
+
+    -- Check HTTP response code
+    if code ~= "200" then
+        return string.format("HTTP request failed with status code: %s", code)
+    end
+
+    -- Parse JSON response
+    local parsed = json.parse(body)
+    if not parsed then
+        return "Failed to parse JSON response"
+    end
+
+    -- Extract IP address
+    local ip = parsed.ip or "unknown"
+
+    return string.format("Internet is connected. Public IP: %s", ip)
+end
+
+local function is_authserver_connected()
+    local cmd = 'curl -s -m 5 -L -w "%{http_code}" "http://portal.sharewifi.cc/pages/portal/portal"'
+    local handle = io.popen(cmd)
+    local result = handle:read("*a")
+    handle:close()
+
+    -- Extract HTTP code (last 3 characters) and response body
+    local body = result:sub(1, -4)  -- Remove last 3 chars (HTTP code)
+    local code = result:sub(-3)     -- Get last 3 chars (HTTP code)
+    
+    -- Check HTTP response code
+    if code ~= "200" then
+        return string.format("HTTP request failed with status code: %s", code)
+    end
+
+    return 'Authserver is connected. HTTP status code: 200 OK'
+end
+
+local function get_nft_info()
+    local cmd = "nft list ruleset"
+    local f = io.popen(cmd)
+    local output = f:read("*a")
+    f:close()
+    return output
+end
+
+local function get_wifidogx_info()
+    local cmd = "wdctlx status"
+    local f = io.popen(cmd)
+    local output = f:read("*a")
+    f:close()
+    return output
+end
+
+local function  get_mqtt_watchdog_timestamp()
+    local file = "/tmp/apfree/mqtt-watchdog"
+    local f = io.open(file, "r")
+    if not f then
+        return "N/A"
+    end
+    local timestamp = f:read("*a")
+    f:close()
+    -- translate timestamp to human readable format
+    timestamp = os.date("%c", tonumber(timestamp))
+    return timestamp
+end
+
+local function main()
+    local conn = ubus.connect()
+    if not conn then
+        error("Failed to connect to ubusd")
+    end
+
+    print("Content-Type: text/html\n")
+
+    local html = "<html><head><title>Wifi Diagnostics</title></head><body>"
+    html = html .. get_network_info(conn)
+    html = html .. "<hr>"
+    html = html .. "<h1>Internet Connectivity</h1>"
+    html = html .. is_internet_connected()
+    html = html .. "<hr>"
+    html = html .. "<h1>Authserver Connectivity</h1>"
+    html = html .. is_authserver_connected()
+    html = html .. "<hr>"
+    html = html .. "<h1>NFT Ruleset</h1>"
+    html = html .. "<pre>" .. get_nft_info() .. "</pre>"
+    html = html .. "<hr>"
+    html = html .. "<h1>Wifidogx Status</h1>"
+    html = html .. "<pre>" .. get_wifidogx_info() .. "</pre>"
+    html = html .. "<hr>"
+    html = html .. "<h1>MQTT Watchdog Timestamp</h1>"
+    html = html .. "<p>" .. get_mqtt_watchdog_timestamp() .. "</p>"
+    html = html .. "</body></html>"
+    print(html)
+
+
+
+    conn:close()
+end
+
+main()

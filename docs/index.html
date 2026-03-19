@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ApFree WiFiDog - Next-Gen Captive Portal Gateway</title>
+<link rel="icon" href="images/logo.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!-- 动态背景 -->
+<div class="bg-container">
+  <img src="images/network-bg.svg" class="bg-animation" alt="Network Flow Background">
+</div>
+
+<header class="hero">
+  <img src="images/logo.png" alt="ApFree WiFiDog Logo" class="logo">
+  <h1>ApFree WiFiDog</h1>
+  <p class="subtitle">下一代 WiFi Portal 网关 · eBPF 加速与 DPI 流控</p>
+  <div class="hero-buttons">
+    <a href="https://github.com/liudf0716/apfree-wifidog" class="btn primary">GitHub</a>
+    <a href="#features" class="btn">功能亮点</a>
+    <a href="#install" class="btn">快速上手</a>
+  </div>
+</header>
+
+<section id="introduction" class="features">
+  <h2>📖 项目介绍</h2>
+  <p>ApFree WiFiDog 是一款专为 OpenWrt 平台设计的高性能、开源 HTTP/HTTPS 强制门户解决方案。</p>
+  <p>它为 Wi-Fi 网络提供安全认证、高并发处理和灵活的规则管理。</p>
+</section>
+
+<section id="features" class="features">
+  <h2>🚀 核心功能</h2>
+  <div class="feature-grid">
+    <div class="card">
+      <h3>稳定 & 高效</h3>
+      <p>基于 API 的 iptables 集成，线程安全。使用 libevent2 + epoll 构建，性能卓越。</p>
+    </div>
+    <div class="card">
+      <h3>安全 & 实时</h3>
+      <p>完全支持 HTTPS 重定向和长连接（WebSocket, MQTT）。</p>
+    </div>
+    <div class="card">
+      <h3>灵活 & 动态</h3>
+      <p>支持本地 + 云端认证、闪屏页模式。无需重启即可管理 MAC、IP、域名。</p>
+    </div>
+    <div class="card">
+      <h3>eBPF 支持</h3>
+      <p>通过 eBPF 实现流量控制和 DPI。</p>
+    </div>
+  </div>
+</section>
+
+
+<section id="install" class="install">
+  <h2>📦 安装说明</h2>
+  <p>在 <strong>较新版本 OpenWrt</strong> 上:</p>
+  <pre>
+apk update
+apk add apfree-wifidog
+  </pre>
+  <p>在 <strong>旧版本 OpenWrt</strong> 上:</p>
+  <pre>
+opkg update
+opkg install apfree-wifidog
+  </pre>
+</section>
+
+<section id="luci" class="features">
+  <h2>🖥️ LuCI 集成</h2>
+  <p>ApFree WiFiDog 通过 <code>luci-app-apfree-wifidog</code> 提供 LuCI Web 界面。</p>
+  <p>推荐使用 <a href="https://github.com/liudf0716/chawrt">chawrt</a>，它捆绑了 ApFree WiFiDog + LuCI，提供即用型的 OpenWrt 固件。</p>
+</section>
+
+<section id="usage" class="install">
+  <h2>⚙️ 基本使用示例</h2>
+  <h3>1. 云端认证模式</h3>
+  <p>需要外部认证服务器。通过 LuCI 配置：<code>认证服务器</code>（主机名、端口、路径）+ <code>网关接口</code>。</p>
+  <h3>2. 本地认证（闪屏页）</h3>
+  <p>无需外部认证服务器。通过 LuCI 配置：<code>网关接口</code> + 重定向 URL（欢迎页/服务条款页）。</p>
+</section>
+
+<section id="troubleshooting" class="features">
+  <h2>🛠️ 问题排查</h2>
+  <p>通过以下命令检查日志：<code>logread</code></p>
+  <p>在 <code>wifidogx.conf</code> 中提高调试级别 → <code>DaemonLogLevel 7</code>。</p>
+  <p>常用命令:</p>
+  <pre>
+wdctlx status client       # 显示已认证的客户端
+wdctlx show domain         # 显示受信任的域名
+wdctlx apfree user_list    # 列出在线用户
+  </pre>
+</section>
+
+<section id="contributing" class="install">
+  <h2>🤝 参与贡献</h2>
+  <p>我们欢迎各种贡献！请在 <a href="https://github.com/liudf0716/apfree-wifidog">GitHub</a> 上提交问题和拉取请求。</p>
+</section>
+
+<section id="contact" class="features">
+  <h2>📬 联系我们</h2>
+  <div class="qq-group-container">
+    <p>💬 欢迎加入 ApFree Wifidog 官方 QQ 交流群</p>
+    <img src="images/qq-group.jpg" alt="ApFree Wifidog QQ Group" width="300" height="auto" loading="lazy">
+    <p class="group-tip">扫描二维码或搜索群号 331230369 加入我们</p>
+  </div>
+</section>
+
+<footer>
+  <p>© 2025 ApFree WiFiDog · Maintained by <a href="https://github.com/liudf0716">@liudf0716</a></p>
+  <p>开源协议：GPLv3</p>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>
