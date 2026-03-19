@@ -533,6 +533,8 @@ ev_http_reply_client_error(struct evhttp_request *req, enum reply_client_page_ty
 
     debug(LOG_DEBUG, "reply client type: %d", type);
     evhttp_add_header(evhttp_request_get_output_headers(req), "Connection", "close");
+    evhttp_add_header(evhttp_request_get_output_headers(req), 
+                     "Content-Type", "text/html; charset=UTF-8");
     evhttp_send_reply(req, 200, "OK", evb);
     evbuffer_free(evb);
 }
